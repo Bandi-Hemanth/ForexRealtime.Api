@@ -13,7 +13,7 @@ public class GetRecentTicksQueryHandler : IRequestHandler<GetRecentTicksQuery, I
 
     public async Task<IReadOnlyList<PriceTickDto>> Handle(GetRecentTicksQuery request, CancellationToken cancellationToken)
     {
-        var query = _db.PriceTicks.AsNoTracking().OrderByDescending(x => x.Ts);
+        IQueryable<PriceTick> query = _db.PriceTicks.AsNoTracking().OrderByDescending(x => x.Ts);
         if (!string.IsNullOrWhiteSpace(request.Symbol))
             query = query.Where(x => x.Symbol == request.Symbol);
 

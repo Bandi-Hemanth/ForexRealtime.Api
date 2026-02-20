@@ -12,7 +12,7 @@ public class RecordSubscriptionCommandHandler : IRequestHandler<RecordSubscripti
 
     public async Task<Unit> Handle(RecordSubscriptionCommand request, CancellationToken cancellationToken)
     {
-        _db.SubscriptionAudits.Add(new SubscriptionAudit
+        _db.SubscriptionAudits.Add(new ForexRealtime.Api.Domain.SubscriptionAudit
         {
             UserId = request.UserId,
             Symbol = request.Symbol,

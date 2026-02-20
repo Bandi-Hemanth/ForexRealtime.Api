@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
+using ForexRealtime.Api.Hubs;
 using ForexRealtime.Api.Infrastructure.Persistence;
 using ForexRealtime.Api.Services;
 
@@ -20,27 +21,20 @@ builder.Host.UseSerilog((ctx, lc) => lc
     .Enrich.WithProperty("Application", "ForexRealtime.Api")
     .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {SourceContext}{NewLine}{Message:lj}{NewLine}{Exception}"));
 
-// Correlation ID middleware will set TraceId; ensure it's in log context
 builder.Services.AddHttpContextAccessor();
 
-// DbContext + PostgreSQL
 var conn = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? "Host=localhost;Database=forex_realtime;Username=postgres;Password=postgres";
 builder.Services.AddDbContext<ForexDbContext>(o => o.UseNpgsql(conn));
 
-// MediatR
 builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(Program).Assembly));
-
-// SignalR
 builder.Services.AddSignalR();
 
-// Singleton in-memory tick cache; background services persist and broadcast
 builder.Services.AddSingleton<ITickCache, TickCache>();
 builder.Services.AddHostedService<FinnhubIngestService>();
 builder.Services.AddHostedService<BroadcastService>();
 builder.Services.AddHostedService<TickPersistenceService>();
 
-// JWT
 var jwtKey = builder.Configuration["Jwt:Key"] ?? "ForexRealtime-SigningKey-Min32Chars!!";
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -56,7 +50,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
             ClockSkew = TimeSpan.Zero
         };
-        // SignalR: send JWT via query string when not possible via header
         options.Events = new JwtBearerEvents
         {
             OnMessageReceived = ctx =>
@@ -72,8 +65,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 builder.Services.AddControllers();
-builder.Services.AddOpenApi();
-builder.Services.AddStaticFiles();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
 {
     p.AllowAnyHeader().AllowAnyMethod().AllowCredentials().SetIsOriginAllowed(_ => true);
@@ -81,7 +72,6 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
 
 var app = builder.Build();
 
-// Correlation ID for logging
 app.Use(async (context, next) =>
 {
     var traceId = context.TraceIdentifier;
@@ -101,12 +91,8 @@ app.UseAuthorization();
 
 app.UseStaticFiles();
 app.MapControllers();
-app.MapHub<Hubs.ForexHub>("/hubs/forex");
+app.MapHub<ForexHub>("/hubs/forex");
 
-if (app.Environment.IsDevelopment())
-    app.MapOpenApi();
-
-// Apply migrations on startup (optional; remove in production if you run migrations separately)
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ForexDbContext>();

@@ -95,7 +95,20 @@ public class FinnhubIngestService : BackgroundService
         try
         {
             var p = item.TryGetProperty("p", out var pEl) ? pEl.GetDecimal() : 0m;
-            var sym = symbol ?? item.TryGetProperty("s", out var sEl) ? sEl.GetString() ?? "UNKNOWN" : "UNKNOWN";
+            string sym;
+
+            if (!string.IsNullOrEmpty(symbol))
+            {
+                sym = symbol;
+            }
+            else if (item.TryGetProperty("s", out var sEl))
+            {
+                sym = sEl.GetString() ?? "UNKNOWN";
+            }
+            else
+            {
+                sym = "UNKNOWN";
+            }
             if (string.IsNullOrEmpty(sym)) return;
             var ts = item.TryGetProperty("t", out var tEl) ? DateTimeOffset.FromUnixTimeMilliseconds(tEl.GetInt64()).UtcDateTime : DateTime.UtcNow;
             var spread = 0.0001m;
