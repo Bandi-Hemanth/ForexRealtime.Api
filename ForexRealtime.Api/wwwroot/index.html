@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Forex Real-time Test Client</title>
+  <style>
+    body { font-family: sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+    input, button { padding: 0.5rem 1rem; margin: 0.25rem; }
+    #log { background: #1e1e1e; color: #d4d4d4; padding: 1rem; height: 300px; overflow-y: auto; font-family: monospace; font-size: 12px; }
+    .tick { margin: 0.25rem 0; }
+    .error { color: #f48771; }
+    .ok { color: #4ec9b0; }
+    h2 { margin-top: 1.5rem; }
+  </style>
+</head>
+<body>
+  <h1>Forex Real-time Test Client</h1>
+  <p>Base URL: <input type="text" id="baseUrl" value="https://localhost:7050" style="width: 280px" /></p>
+  <h2>1. Login</h2>
+  <input type="text" id="username" placeholder="Username" value="testuser" />
+  <button id="btnLogin">Login</button>
+  <span id="loginStatus"></span>
+  <h2>2. Connect SignalR & Subscribe</h2>
+  <input type="text" id="symbol" placeholder="Symbol" value="OANDA:EUR_USD" />
+  <button id="btnSubscribe" disabled>Subscribe</button>
+  <button id="btnUnsubscribe" disabled>Unsubscribe</button>
+  <span id="hubStatus"></span>
+  <h2>3. Price updates (every 500ms)</h2>
+  <div id="log"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+  <script>
+    let token = null;
+    let connection = null;
+
+    const baseUrl = () => document.getElementById('baseUrl').value.replace(/\/$/, '');
+    const log = (msg, cls = '') => {
+      const el = document.getElementById('log');
+      const line = document.createElement('div');
+      line.className = cls;
+      line.textContent = new Date().toISOString().slice(11, 23) + ' ' + msg;
+      el.appendChild(line);
+      el.scrollTop = el.scrollHeight;
+    };
+
+    document.getElementById('btnLogin').onclick = async () => {
+      const username = document.getElementById('username').value.trim();
+      if (!username) { document.getElementById('loginStatus').textContent = 'Enter username'; return; }
+      try {
+        const r = await fetch(baseUrl() + '/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username })
+        });
+        if (!r.ok) throw new Error(await r.text());
+        const data = await r.json();
+        token = data.token;
+        document.getElementById('loginStatus').textContent = 'Logged in as ' + data.username;
+        document.getElementById('btnSubscribe').disabled = false;
+        log('Login OK', 'ok');
+      } catch (e) {
+        document.getElementById('loginStatus').textContent = 'Login failed';
+        log('Login error: ' + e.message, 'error');
+      }
+    };
+
+    document.getElementById('btnSubscribe').onclick = async () => {
+      if (!token) { log('Login first', 'error'); return; }
+      const url = baseUrl() + '/hubs/forex?access_token=' + encodeURIComponent(token);
+      connection = new signalR.HubConnectionBuilder()
+        .withUrl(url)
+        .withAutomaticReconnect()
+        .build();
+      connection.on('PriceUpdate', (data) => {
+        log(JSON.stringify(data), 'tick');
+      });
+      try {
+        await connection.start();
+        document.getElementById('hubStatus').textContent = 'Connected';
+        const symbol = document.getElementById('symbol').value.trim();
+        if (symbol) await connection.invoke('Subscribe', symbol);
+        document.getElementById('btnUnsubscribe').disabled = false;
+        log('Subscribed to ' + (symbol || 'none'), 'ok');
+      } catch (e) {
+        document.getElementById('hubStatus').textContent = 'Connection failed';
+        log('Hub error: ' + e.message, 'error');
+      }
+    };
+
+    document.getElementById('btnUnsubscribe').onclick = async () => {
+      if (!connection || connection.state !== signalR.HubConnectionState.Connected) return;
+      const symbol = document.getElementById('symbol').value.trim();
+      if (symbol) await connection.invoke('Unsubscribe', symbol);
+      log('Unsubscribed from ' + symbol, 'ok');
+    };
+  </script>
+</body>
+</html>
